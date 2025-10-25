@@ -1,0 +1,202 @@
+---
+title: "Diff-in-Diff Weekly Discussion"
+author: "Teddy Kelly"
+format:
+  html:
+    embed-resources: true
+editor: visual
+toc: TRUE
+---
+
+# A. Skim Diff-in-Diff Paper
+
+# B. Run Simple Linear Regression on Hurricane Dataset
+
+Below, I have uploaded the 2005 Atlantic hurricane season data set that I will use perform a difference-in-difference regression. I have stored the data in a data frame called `df`. The two margins of the data set are time-period and treatment. The treatment group are the state who were hit by Hurricane Katrina.
+
+```{r}
+rm(list=ls())
+df <- read.csv(
+  "/Users/teddykelly/Downloads/us_fred_coastal_us_states_avg_hpi_before_after_2005-1-1.csv")
+```
+
+The estimating equation for the difference-in-difference regression is the following: $$HPI.CHP_{st}=\beta_0+\beta_1Time.Period_t+\beta_2Disaster.Affected_s+\beta_3Time.Period_t*Disaster.Affected_s+\epsilon_{st}$$
+
+## **Variable Types and Meanings**
+
+Dependent Variable
+
+-   $HPI.CHP_{st}$
+
+    -   The response variable that measures the house price inflation of coastal home before and after the 2005 Atlantic hurricane season.
+
+Independent Variables
+
+-   $Time.Period_t$
+
+    -   Dummy variable associated with $\beta_1$.
+
+    -   **0** for observations recorded in the **pre**-hurricane period
+
+    -   **1** for observations recorded in the **post**-hurricane period
+
+-   $Disaster.Affected_{s}$
+
+    -   Dummy variable associated with $\beta_2$.
+
+    -   **0** if the observation was recorded in the **control group** of states not hit by the hurricane
+
+    -   **1** if if the observation was recorded in the **treatment group** of states that was hit by the hurricane
+
+-   $Time.Period_t*Disaster.Affected_s$
+
+    -   Interaction dummy variable term associated with $\beta_3$
+
+    -   **1** only if the observation was located in the **treatment group** of states hit by the hurricane and if that observation was recorded in the **post**-hurricane period.
+
+    -   **0** for any other combination
+
+## Running the Regression
+
+Below, I have created the necessary interaction term that will be used in the DID regression.
+
+```{r, message=FALSE}
+# Creting the interaction term between time period and disaster affected
+df$Time_Period.Disaster_Affected <- df$Time_Period*df$Disaster_Affected
+
+# Running the DID regression
+my_reg <- lm(data = df, formula = HPI_CHG ~ Time_Period + Disaster_Affected 
+             + Time_Period.Disaster_Affected)
+
+# Loading stargazer and storing regression output in table
+library(stargazer)
+stargazer(my_reg, type = "text", title = "Diff-in-Diff Regression", digits = 5)
+```
+
+# C. Interpret The Regression
+
+Before trying to understand the reasoning behind what we have done, let's break down the regression results displayed in the table above.
+
+## Coefficient Interpretations
+
+-   $\beta_1$
+
+    -   $\beta_1$ represents the average change in home price inflation from before and after the 2005 hurricane season for the **control group**.
+
+    -   The coefficient estimate is $\beta_1=-0.02785$, meaning that on average, the home price inflation decreased by about 2% points from before to after the 2005 hurricane season for states in the control group.
+
+    -   This estimate should match the difference we find between the post and pre HPI values for the control group in the 2x2 matrix.
+
+-   $\beta_2$
+
+    -   $\beta_2$ represents the difference in the house price index between states in the control and treatment groups prior to the 2005 Atlantic hurricane season.
+
+    -   The coefficient estimate is $\beta_2=-0.01394$, meaning that before the 2005 hurricane season, the home price index was on average about 1.39% points less for states in the treatment group than for states in the control group.
+
+    -   This value for $\beta_2$ should be equivalent to the difference we find in the treatment and control group's pre-period HPI values in the 2x2 matrix.
+
+-   $\beta_3$
+
+    -   $\beta_3$ is simply the DID estimator. It represents the overall effect that the 2005 hurricane season had on the HPI prices for the States affected by the hurricane.
+
+    -   The estimate is $\beta_3=0.01974$, meaning that the occurrence of the 2005 hurricane season affected the HPI to increase by about 1.97% points for states hit by the hurricane.
+
+    -   This value for $\beta_3$ will be precisely the difference in difference result we calculate in the 2x2 matrix.
+
+-   Statistical Significance
+
+    -   Note that all of the coefficient estimates are statistically significant, as well as the F-statistic, indicating strong certainty these regression results.
+
+    -   The `Time_Period` coefficient and the F-stat are statistically significant below the $\alpha=0.01$ level, while the `Disaster_Affected` and the DID estimator are statistically significant under the $\alpha=0.05$ level.
+
+Now that I have interpreted the results of the regression table, I will now identify the treatment/control groups and explain the rationale behind using difference in difference for this setting.
+
+## 1. Control and Treatment Groups
+
+-   The treatment is the 2005 Atlantic hurricane season.
+
+-   The treatment group is the collection of states that were affected by the hurricane season.
+
+-   The control is the instance of being unaffected by the 2005 hurricane season.
+
+-   The control group is the collection of states that were not affected by the hurricane season.
+
+## 2. Explain the Methodology
+
+The idea of difference-in-difference for this example is to compare the outcomes in the home price inflation of states that were both affected and unaffected by the 2005 hurricane season both before and after the disaster occurred.
+
+This methodology works because measuring the home price inflation before the natural disaster allows us to establish a base-line difference in HPI between the control and treatment group of states. Then, we assume that their corresponding trends would have continued as before if the hurricane never happened. Based on this assumption, we can measure the inflation of homes that were in states affected by the hurricane based on what we would have assumed to happened if the event never occurred. Then, we can take the difference in these HPI values to determine the total effect of the hurricane season on the home price inflation.
+
+## 3. 2x2 matrix of regression equations
+
+I first used dplyr to create four distinct data frames, each one corresponding to the following pre-control, post-control, pre-treatment, post-treatment. Below, is the code for this.
+
+```{r, message=FALSE}
+library(dplyr)
+
+# Pre-hurricane control group
+pre_control <- df|> filter(Time_Period == 0 & Disaster_Affected == 0) |> 
+  select(HPI_CHG)
+
+# Post-hurricane control group
+post_control <- df|> filter(Time_Period == 1 & Disaster_Affected == 0) |> 
+  select(HPI_CHG)
+
+# Pre-hurricane Treatment group
+pre_treatment <- df |> filter(Time_Period == 0 & Disaster_Affected == 1) |> 
+  select(HPI_CHG)
+
+# Post-hurricane Treatment Group
+post_treatment <- df|> filter(Time_Period == 1 & Disaster_Affected == 1) |> 
+  select(HPI_CHG)
+```
+
+Now that I have divided up the the `HPI_CHG` into four groups, I will calculate the mean value of each instance and form a 2x2 matrix.
+
+```{r}
+pre_c <- round(mean(pre_control$HPI_CHG), digits = 5)
+post_c <- round(mean(post_control$HPI_CHG), digits = 5)
+pre_t <- round(mean(pre_treatment$HPI_CHG), digits = 5)
+post_t <- round(mean(post_treatment$HPI_CHG), digits = 5)
+```
+
+Below is the resulting matrix with the DID result. Note that this is actually a 3x3 matrix, but the additional dimensions are just the resulting differences from the original 2x2 matrix seen in the first 2 rows and columns of the matrix.
+
+```{r}
+diff_mat <- matrix(data = 
+                     c(pre_c, post_c, (post_c-pre_c),
+                       pre_t, post_t, (post_t-pre_t),
+                       (pre_t-pre_c), (post_t-post_c), 
+                       ((post_t-pre_t)-(post_c-pre_c))),
+                   nrow = 3, 
+                   ncol = 3, 
+                   byrow = T, 
+                   dimnames = list(c("Control", "Treatment", "Differences"), 
+                                   c("Pre", "Post", "Differences")))
+diff_mat
+```
+
+-   $\beta_1$
+
+    -   $\beta_1=-0.02785$ is the exact same as the difference between the post an pre HPI values which is located in row 1, column 3 of the matrix above.
+
+-   $\beta_2$
+
+    -   $\beta_2=-0.01394$ is the exact same as the difference in the pre-treatment HPI values between the treatment and control group located in row 3, column 1 in the matrix.
+
+-   $\beta_3$
+
+    -   $\beta_3=0.01974$ is equivalent to the value seen in row 3, column 3 which represents the difference between the differences in the post and pre HPI values for the treatment and control group.
+
+# D. What are the threats to identification for diff-in-diff
+
+The two main implicit assumptions for difference-in-difference are:
+
+1.  Parallel Trends
+    -   We assume the dependent variable for the treatment and the control group generally move in the same direction before the treatment take place.
+
+    -   If the treatment never took place, we assume that those parallel trends between the groups would continue
+2.  No anticipation of the treatment
+    -   We assume that the treatment has no affect on the treatment group prior to the treatment being introduced.
+
+If, the parallel trends assumption holds and there is no evidence of the treatment having an effect before its implementation, we can trust the DID point estimates because we could then calculate the counterfactual of the treatment group and take this difference from the resulting trend after the treatment to accurately calculate the DID estimate. However, if one or both of the assumptions are violated, we would have to take the results with a grain of salt because we cannot guarantee that there weren't any external factors other than the treatment that influenced the outcome variable in the treatment group to be different than that of the control group.

@@ -1,0 +1,698 @@
+---
+title: "HW 2"
+author: "Teddy Kelly"
+format: pdf
+editor: visual
+toc: true
+---
+
+\newpage
+
+# Motivation
+
+Every day, millions of Americans from all different kinds backgrounds get in their cars to drive to work, school, shopping, etc. Unfortunately, while the vast majority of drivers get to their destinations without any problems, not a day goes by without the occurrence of car accidents. Some are minor while others are fatal, however, all car accidents result in some type of damage requiring costs to be paid. The goal of this project is to develop a binary logistic regression model that can accurately predict the likelihood of someone getting in a car accident based on their background, and a multiple linear regression model that will predict the expected cost of the accident if the person does get in an accident.
+
+# Setup
+
+Clear the environment
+
+```{r, results='hide', warning=FALSE, message=FALSE, echo=FALSE}
+# Clear the environment
+rm(list = ls())
+
+# Clear any unused memory
+gc()
+
+# Clear the console
+cat("\014")
+
+# Clearing all of the pots
+while (!is.null(dev.list())) {
+  dev.off()
+}
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Defining the packages I will use
+packages <- c("tidyverse",
+              "stargazer",
+              "knitr",
+              "kableExtra",
+              "visdat",
+              "psych",
+              "ggplot2",
+              "car",
+              "ggfortify",
+              "DataExplorer",
+              "naniar",
+              "Amelia",
+              "mice",
+              "ggcorrplot")
+for (package in packages) {
+  library(package, character.only = TRUE)
+}
+# Clear the vector packages and the variable package from the environment
+remove(packages, package)
+```
+
+```{r}
+train_data <- read.csv(
+  "/Users/teddykelly/Downloads/insurance-training-data2-2.csv")
+
+eval_data <- read.csv(
+  "/Users/teddykelly/Downloads/insurance-testing-data2-2.csv")
+
+```
+
+Changing the variable names both datasets to be more readable.
+
+```{r}
+#Converting variables with multiple categories into ordered factors before
+# converting them to numerics
+train_data$CAR_TYPE <- factor(
+  train_data$CAR_TYPE,
+  levels = c("Minivan", "Panel Truck", "Pickup", "Sports Car", "Van", "z_SUV"),
+  ordered = TRUE
+)
+
+train_data$EDUCATION <- factor(
+  train_data$EDUCATION,
+  levels = c("<High School", "Bachelors", "Masters", "PhD", 
+             "z_High School"),
+  ordered = TRUE
+)
+
+train_data$JOB <- factor(
+  train_data$JOB,
+  levels = c("", "Clerical", "Doctor", "Home Maker", "Lawyer", "Manager",
+             "Professional", "Student", "z_Blue Collar"),
+  ordered = TRUE
+)
+
+train_data <- train_data |> transmute(
+  crash_flag        = TARGET_FLAG,
+  crash_cost        = TARGET_AMT,
+  driver_age        = AGE,
+  car_value         = as.numeric(gsub("[$,]", "", BLUEBOOK)),
+  car_age           = as.numeric(CAR_AGE),
+  car_type          = CAR_TYPE,
+  car_use           = ifelse(CAR_USE=='Private', 1, 0),
+  past_claims_count = CLM_FREQ,
+  educ_level        = EDUCATION,
+  num_children_home = HOMEKIDS,
+  home_value        = as.numeric(gsub("[$,]", "", HOME_VAL)),
+  income            = as.numeric(gsub("[$,]", "", INCOME)),
+  job_category      = JOB,
+  teen_drivers      = KIDSDRIV,
+  married           = ifelse(MSTATUS=='Yes', 1, 0),
+  mvr_points        = MVR_PTS,
+  past_claims_amount = as.numeric(gsub("[$,]","", OLDCLAIM)),
+  single_parent      = ifelse(PARENT1=='Yes', 1, 0),
+  red_car            = ifelse(RED_CAR=='yes', 1, 0),
+  license_revoked    = ifelse(train_data$REVOKED=='Yes', 1, 0),
+  gender             = ifelse(train_data$SEX=='M', 1, 0),
+  policy_tenure      = TIF,
+  commute_time       = TRAVTIME,
+  urban_rural        = ifelse(URBANICITY=='Highly Urban/ Urban', 1, 0),
+  years_on_job       = YOJ
+)
+```
+
+# 1 Data Exploration
+
+**Section Goal**
+
+Before developing any sophisticated models for predicting the likelihood of a crash and how much the crash costed, we must first understand the structure of the training dataset. This involves understanding the following:
+
+1.  The size of the data
+2.  Whether there are missing values
+3.  Distribution of data for each variable
+
+**Training Dataset Structure**
+
+-   The total data contains about 8,000 observations and 25 variables of interest measured at a fixed point in time (cross-sectional data)
+
+-   Each observation represents a customer at an auto insurance company. Each variable represents information about the corresponding customer. Note that since there are so many variables, we must make decisions about which variables to included in the regressions.
+
+-   The data is split into two groups:
+
+    -   Training dataset: Used to train or fit the models on. It contains 6,528 observations (\~80% of the data)
+
+    -   Evaluation dataset: Used to evaluate the performance of the trained models on new unseen data. It contains 1,633 observations (\~20% of the data)
+
+-   Below is a table displaying each of the 25 variables with their names as how they appear in the training data and a description of what they mean.
+
+::: {tbl-colwidths="[25,75]"}
+| **Variable Name** | **Variable Meaning** |
+|:-----------------------------------|:-----------------------------------|
+| crash_flag | Indicates whether the car was involved in a crash (1 = Yes, 0 = No) |
+| crash_cost | Cost of the accident if person was in a crash |
+| driver_age | Age of the driver |
+| vehicle_value | Estimated value of the vehicle (Blue Book value) |
+| vehicle_age | Age of the vehicle in years |
+| vehicle_type | Type of vehicle (e.g., SUV, Sedan, Sports) |
+| vehicle_use | How the vehicle is used (e.g., Commercial or Private) |
+| past_claims_count | Number of past claims filed in the last 5 years |
+| education_level | Driver's highest education level |
+| num_children_home | Number of children living at home |
+| home_value | Estimated value of the driver’s home |
+| annual_income | Driver’s annual income |
+| job_category | Job category or occupation type |
+| num_teen_drivers | Number of teenage drivers using the car |
+| marital_status | Marital status of the driver |
+| mvr_points | Motor Vehicle Record (MVR) points — measure of violations |
+| past_claims_amount | Total claim amount from the past 5 years |
+| single_parent | Indicates if the driver is a single parent |
+| red_car | Indicates if the vehicle is red |
+| license_revoked | Indicates if the driver’s license was revoked in the past 7 years |
+| gender | Gender of the driver |
+| policy_tenure | Number of years the policy has been active |
+| commute_time | Average commute time or distance to work |
+| urbanicity | Urban or rural location indicator |
+| years_on_job | Number of years the driver has been at their current job |
+
+: Variable Names and Definitions
+:::
+
+## 1.2 Summary Statistics
+
+The summary statistics on the numerical and binary variables are seen below. As we can see, there are not longer any missing variables which will allow us to build our models to make predictions. Notice that I did not include any of the categorical variables like `car_type`, `educ_level`, and `job_category`. I will display the summary statistics for these variables separately to make more sense of them.
+
+```{r}
+labels <- c(
+  "Crash Indicator",
+  "Crash Cost",
+  "Driver Age",
+  "Vehicle Value",
+  "Vehicle Age in years",
+  "Vehicle Use",
+  "Past Claims count",
+  "Children at Home",
+  "Home Value",
+  "Annual Income",
+  "Teen Drivers count",
+  "Marital Status",
+  "MVR Points",
+  "Past Claims",
+  "Single Parent",
+  "Red Car Indicator",
+  "License Revoked",
+  "Driver Gender",
+  "Policy Tenure in years",
+  "Commute Time/Distance",
+  "Urbanicity",
+  "Years on Job"
+)
+
+stargazer(train_data, type = "text", notes = "N = 6,528",
+          digits = 2, median = T, covariate.labels = labels)
+```
+
+**Summary Statistics Analysis:**
+
+-   Dependent Variables
+
+    -   `crash_flag` is a binary variable that determines whether a person was involved in an accident. 1 indicates they the observation was in a crash and 0 means they were not. The mean value is 0.26 which means that about 26% of the people in the survey did not crash their car.
+
+    -   `crash_cost` has a mean value of \$1,466.62, meaning that the average cost of accidents for both people involved and not involved in car crashes is about \$1,466. The cost of car crashes is heavily skewed to the right as the median value of `crash_cost` is zero which confirms what we found above that most of the people in this sample were not involved in car crashes. I will have to filter the data to only include observations who were in a crash when running the multiple linear regression.
+
+-   Key Independent Variables
+
+    -   `driver_age` is very symmetrical as the mean and median ages of the driver are both around 45 years old. This will be an intriguing variable to look at since it's usually believed that young drivers are more reckless and also that the elderly are not great drivers.
+
+    -   `income` will be interesting to investigate because we would assume that wealthier people will be better drivers. However, wealthy people could own fancy sports cars which could actually be more dangerous to operate. Income is of course right-skewed which is expected.
+
+-   Missing Values
+
+    -   `driver_age`, `car_age`, `home_value`, `income`, and `years_on_job` all have missing observations.
+
+    -   I will address these missing values in the data preparation section before building the logistic and linear regression models.
+
+## 1.3 Histograms and Bar Charts
+
+In the previous section, we looked at the summary statistics of the numerical and dummy variables in the dataset. Now, we will visually identify the distributions of each of the numerical and binary variables using histograms.
+
+Dependent Variables:
+
+```{r}
+# Crash Indicator Bar Chart
+library(patchwork)
+
+ggplot(data = train_data,
+       mapping = aes(x = factor(crash_flag))) +
+  labs(title = "Bar Chart of People in Crashes", 
+       x = "In Crash (1) Not in crash (0)") +
+  geom_bar(fill = "blue") 
+
+ ggplot(data = train_data,
+       mapping = aes(x = crash_cost))+
+  labs(title = "Histogram of the cost of Crashes", x = "Cost of crash in $")+
+  geom_histogram(bins = 20, fill = "navy")+
+  geom_vline(xintercept = mean(train_data$crash_cost), 
+             linetype = "dashed", color = "white")
+```
+
+I have broken up the histograms into two groups. The first group of histograms are displayed are the continuous quantitative variables and the second group will contain histograms of the binary and discrete numerical variables. This way, it is much easier to identify patterns in how the data is distributed for each variable.
+
+**Group 1: Numerical continuous variables**
+
+```{r, message=FALSE, warning=FALSE}
+# Create clean dataset without the categorical variables with lots of 
+# categories
+clean_df_num <- train_data |> dplyr::select(driver_age, car_value, car_age,
+                                       home_value, income, past_claims_amount,
+                                       policy_tenure, commute_time, 
+                                       years_on_job)
+
+
+
+# Create a melted dataset to display the histograms of the quantitative 
+# variables
+df_melted_num <- reshape2::melt(data = clean_df_num)
+
+# Graphing the histograms
+ggplot(data = df_melted_num,
+       mapping = aes(x = value)) +
+  geom_histogram()+
+  facet_wrap(~variable, scales = "free_x")
+```
+
+**Observations:**
+
+-   There are lots of right skewed data because the highest frequency for most of the variables is 0.
+
+**Group 2: Binary and numerical discrete variables**
+
+```{r, message=FALSE, warning=FALSE}
+clean_df_cat <- train_data |> dplyr::select(-crash_cost, -driver_age, -car_value, 
+                                       -car_age, -home_value, -income, 
+                                       -past_claims_amount,  -policy_tenure,
+                                       -commute_time, -years_on_job, 
+                                       -car_type, -educ_level, -job_category,
+                                       -crash_flag)
+df_melted_cat <- reshape2::melt(data = clean_df_cat)
+
+# Graphing the histograms
+ggplot(data = df_melted_cat,
+       mapping = aes(x = value)) +
+  geom_histogram()+
+  facet_wrap(~variable, scales = "free_x")
+```
+
+### 1.3.1 Categorical Variables Bar Charts
+
+```{r}
+# Recode data values in the train dataset first
+train_data$car_type <- dplyr::recode(train_data$car_type,
+                                         "z_SUV" = "SUV")
+
+train_data$educ_level <- dplyr:: recode(train_data$educ_level,
+                                            "<High School" = "High School",
+                                            "z_High School" = "High School")
+
+train_data$job_category <- dplyr::case_when(
+  train_data$job_category == "z_Blue Collar"          ~ "Blue Collar",
+  is.na(train_data$job_category) | train_data$job_category == 
+    ""    ~ "Missing Values",
+  TRUE ~ as.character(train_data$job_category)  # Keep other values as they are
+)
+
+
+# Create separate data rame for the categorical variables
+train_categorical <- train_data |> dplyr::select(car_type, educ_level, 
+                                            job_category)
+
+
+```
+
+\*\* I could maybe split each data into crashed and no crash
+
+Now i will create separate data frame for the frequencies of each categorical for each variable.
+
+```{r, message=FALSE, warning=FALSE}
+# Car Type
+car_type_df <- data.frame(Value = names(table(train_categorical$car_type)),
+                          Frequency = table(train_categorical$car_type))
+
+# Graph this
+ggplot(data = car_type_df,
+       mapping = aes(x = reorder(x = Value, X = -Frequency.Freq), 
+                     y = Frequency.Freq)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Bar Chart of Car Type", x = "Car Types", y = "Frequency")
+```
+
+We will do the same for education level.
+
+```{r, message=FALSE, warning=FALSE}
+educ_level_df <- data.frame(table(train_categorical$educ_level))
+
+# Graph this
+ggplot(data = educ_level_df,
+       mapping = aes(x = reorder(x = Var1, X = -Freq), y = Freq)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Bar chart of Education Level", x = "Education Level", 
+       y = "Frequency")
+```
+
+Now for job category.
+
+```{r, message=FALSE, warning=FALSE}
+job_cat_df <- data.frame(table(train_categorical$job_category))
+
+#Graph this
+ggplot(data = job_cat_df,
+       mapping = aes(x = reorder(x = Var1, X = -Freq), y = Freq)) +
+  geom_bar(stat = "identity") + 
+  labs(title = "Bar Chart of Job Category", x = "Job Category", 
+       y = "Frequency")
+```
+
+**\*\*Create bar charts for the categorical variables.**
+
+```{r}
+ggplot(data = train_data,
+       mapping = aes(x = urban_rural, y = crash_cost)) +
+  geom_point()
+```
+
+For next time: I must bar graph or pie chart to represent the distribution of people in the sample that were in crashes versus those who were not in a crash. I also have to discuss whether any of the key variables are correlated with each other or one of the dependent variables. I also need to plot the relationships between the variables. Also, start trying to come up with binomial logistic regression and multivariate linear regressions for the models.
+
+## 1.4 Correlation Table
+
+Now, I will investigate if there are any explanatory variables that are correlated with either of the response variables `crash_flag` or `crash_cost`. Correlation tables do not work well with categorical data, so I will exclude car type, education level, and job category from the correlation plot.
+
+```{r}
+# Create the correlation table with specified variables
+corr_tab <- cor(x = train_data[, -c(5, 6, 9, 13)])
+
+colnames(corr_tab) <- c(
+  "car crash",
+  "crash cost",
+  "driver age",
+  "car value",
+  "car use", 
+  "# of past claims",
+  "# of children",
+  "home value",
+  "income",
+  "teen drivers",
+  "married",
+  "mvr points",
+  "past claims amount",
+  "single parent",
+  "red car",
+  "license revoked",
+  "gender",
+  "policy tenure",
+  "commute time",
+  "urban",
+  "years on job"
+)
+
+rownames(corr_tab) <- c(
+  "car crash",
+  "crash cost",
+  "driver age",
+  "car value",
+  "car use", 
+  "# of past claims",
+  "# of children",
+  "home value",
+  "income",
+  "teen drivers",
+  "married",
+  "mvr points",
+  "past claims amount",
+  "single parent",
+  "red car",
+  "license revoked",
+  "gender",
+  "policy tenure",
+  "commute time",
+  "urban",
+  "years on job"
+)
+
+# Use ggcorplot to create the upper correlation plot
+corr_plot <- ggcorrplot(corr     = corr_tab,
+                        type     = "upper",
+                        method   = "square",
+                        title    = "correlation plot",
+                        colors   = c("red", "white", "green"),
+                        lab      = T,
+                        lab_size = 1,
+                        insig    = "pch",
+                        tl.cex   = 8,
+                        digits = 2
+                        
+                        )
+corr_plot
+```
+
+**Correlation Plot Analysis**
+
+-   It's clear that both `crash_flag` and `crash_cost` have the same variables that are positively and negatively correlated with them. This makes since because both of the dependent variables of interest are farilly strongly correlated with a value of 0.54.
+
+    -   Most notably, `ubran`, `mvr_popints`, and `past_claims_count` have the strongest positive correlations with `crash_flag` and `crash_cost`.
+
+    -   The most negatively correlated variables with whether or not someone gets into a crash are `married` and `car_use` which makes since because in theory, married people are typically more responsible and get into less crashes.
+
+-   Independent variables correlated among themselves
+
+    -   `teen_drivers` and `num_children_home`
+
+        -   Positively correlated with a value of 0.47.
+
+        -   This makes sense because customers with more children at home are likely to have more teen drivers. Note that including both of these variables may result in multicollinearity.
+
+    -   `past_claims_amount` and `past_claims_count`
+
+        -   Obvious positive correlation between the number of past claims someone has made and the total amount of money from those claims. Including both variables in the regressions may result in multicollinearity.
+
+    -   `mvr_points` and `past_claims_count`
+
+        -   Positively correlated with a value of 0.4 which makes sense because people who have more violates are likely to have filed more claims.
+
+    -   `gender` and `red_car`
+
+        -   The positive correlatioon value of 0.67 is a very interesting result in theory, we don't think of the color of cars being correlated with gender. This result suggests that more men are linked with driving red cars.
+
+    -   `licesnse_revoked` and `past_claims_amount`
+
+        -   Positively correlated with a value of 0.41 which makes sense because people who have their license revoked are more likely to have made claims in the past.
+
+    -   `single_parent` and `married`
+
+        -   negatively correlated which is obvious since single parents are not married and vice versa.
+
+# 2 Data Preparation
+
+## 2.1 Missing Values
+
+Identifying the variables that have missing values is an important step for data cleaning. Below, I have outlined the procedure I use on how to address missing values.
+
+-   Determine the percentage of values that are missing for each variable that contains missing values.
+
+    -   Anything variable that has less than 10% of its observations missing, I will keep those columns.
+
+-   Consider the importance of each variable to the problem
+
+-   Consider deleting the specific observations with missing values if the data is missing completely at random (MCAR)
+
+    -   I will run an `mcar_test` from the naniar package to evaluate this.
+
+-   If there is no evidence to suggest that the data is not missing completely at random, then deleting certain missing values or imputing them.
+
+Below is a visual representation of the percentage of missing values that each variable contains.
+
+```{r}
+plot_missing(train_data)
+```
+
+As we can see, the following are variables in the training data the contain missing values and their corresponding percentage.
+
+-   `driver_age`: 0.05% missing values
+
+    -   The age of the driver has a strong theoretical effect on how safe they drive and there are very few missing values. No reason to drop the entire column.
+
+-   `income`: 5.42% missing values
+
+    -   Income of a customers could be very intriguing to study. Stereotypes would suggest that people with higher income are safer drivers, however, more expensive sports car may be more dangerous.
+
+    -   Less than 10% of values are missing and variable is of interest, so there is no reason to drop thi entire column.
+
+-   `home_value`: 5.64% of observations have missing values
+
+    -   Similar to income, theory points to people with high home values being safer drivers, but yet again, they may own more fancy cars that could be more dangerous. Not many missing values, so no need to remove entire column.
+
+-   `years_on_job`: 5.74% of observations
+
+    -   Not many missing values and will be interesting to study since people who have worked at one place for longer may be more responsible, however, they may drive to work more often and put themselves in danger. No reason to drop entire column.
+
+-   `car_age`: 6.11% of observations.
+
+    -   Older cars could get into more accidents since they are more likely to have malfunctions. Only about 6% of its values are missing so it would be better to keep this column.
+
+-   All of these variables have under 10% of their values missing, and from the graph, we can see that these quantities of missing values are not alarming. Therefore, I have decided to not drop any of these variable columns outright.
+
+    Notice that summing these percentages up gives a value of about 22.96%, meaning that about 23% of the total observations in the training data have at least one missing value. I have confirmed this below:
+
+    ```{r}
+    (length(which(is.na(train_data))) / dim(train_data)[1])*100
+    ```
+
+<!-- -->
+
+-   Therefore, deleting all rows that have at least one missing value will delete approximately 23% of the observations recorded in the dataset which could significantly bias the results.
+
+-   However the missingness map displays that only 1% of all of the total data entries are missing, implying that imputing these missing values should have little to no bias on the results. I will still test below if the missing data is missing completely at random or not.
+
+**Missing Completely at Random?**
+
+I will run an mcar test to evaluate if any of the missing values are indeed missing at random.
+
+```{r}
+naniar::mcar_test(train_data)
+```
+
+The null hypothesis is that the data is missing completely at random, so the p-value of 0.15\>0.05, meaning that we fail to reject the null hypothesis that the data is missing completely at random. Note this does not fully prove that the data is missing completely missing at random, but rather there is no strong evidence against this claim. Therefore, implementing median imputation or deleting observations will likely not bias the results from our regressions.
+
+**Imputation of Missing Variables**
+
+-   I have imputed the variables I am not interested in studying because it will not matter if these values become biased. Also, I do not want to remove the other valid information included with observations that have missing years on job and home value.
+
+-   I have decided to impute all of the missing observations using the `mice` algorithm which stands for multiple imputations by chained equations.
+
+```{r}
+imputed_data <- mice(data   = train_data, 
+     method = "mean",    # univariate imputation method - can play with
+     seed   = 7          # integer argument for offsetting the random number
+     )
+```
+
+```{r}
+train_df <- mice::complete(data = imputed_data)
+```
+
+After imputing all of the missing values in the dataset, I will now investigate any outlier values and address them in the next section.
+
+## 2.2 Outlier Values
+
+Now, I must deal with any outlier values that are present in the dataset. To observe which variables have outliers, below I have displayed box plots of the numerical independent variables in the dataset.
+
+```{r, warning=FALSE}
+
+ggplot(data = df_melted_num,
+       mapping = aes(x = factor(variable), y = value)) +
+  geom_boxplot() +
+  facet_wrap(facets = ~variable, scale = "free")
+```
+
+**Box Plot Analysis:**
+
+-   It's clear that almost all of the numerical predictors have some outliers which we will need to address to reduce bias that those values might have in the regressions.
+
+-   I do not want to delete any observations with outliers and impute those values with the mean or median because there are a substantial number of outliers in the data.
+
+-   Instead, I will transform the variables with large outliers in order to reduce their influence on the data.
+
+### 2.2.1 Transforming Variables
+
+Below I have performed log transformations on the variables that are heavily right-skewed.
+
+```{r}
+# Transforming variables with a log transformation 
+
+# Car Value
+train_df$log_car_value <- log(train_df$car_value)
+
+# home value
+train_df$log_home_value <- log(train_df$home_value)
+train_df$log_home_value[train_df$log_home_value == -Inf] <- 0
+
+# income
+train_df$log_income <- log(train_df$income)
+train_df$log_income[train_df$log_income == -Inf] <- 0
+
+# Past claims amount
+train_df$log_past_claims_amount <- log(train_df$past_claims_amount)
+train_df$log_past_claims_amount[train_df$log_past_claims_amount == -Inf] <- 0
+
+# Policy Tenure
+train_df$log_policy_tenure <- log(train_df$policy_tenure)
+
+# Commute Time
+train_df$log_commute_time <- log(train_df$commute_time)
+```
+
+Update box plots
+
+```{r}
+clean_df_num_log <- train_df |> 
+  dplyr::select(log_car_value, log_home_value, log_income,
+         log_past_claims_amount, log_policy_tenure, log_commute_time)
+
+
+
+# Create a melted dataset to display the histograms of the quantitative 
+# variables
+df_melted_num_log <- reshape2::melt(data = clean_df_num_log)
+
+
+
+ggplot(data = df_melted_num_log,
+       mapping = aes(x = factor(variable), y = value)) +
+  geom_boxplot() +
+  facet_wrap(facets = ~variable, scale = "free")
+```
+
+From the box plots above, applying log transformations to those six variables appears to have reduced the number of high outliers that was causing many of the variables to be right-skewed. However, notice that there are some new low outliers especially for `log_income` which could be a problem. Also the distributions of some of the variables look odd which may be a problem for our regressions. When building models, I'll run regressions with logs and without logs and compare their results.
+
+We all of the missing values imputed and the outlier values dealt with, we can finally take a look at our new summary statistics.
+
+```{r}
+stargazer(train_df, type = "text", covariate.labels = labels,
+          median = T, title = "Updated Summary Statistics", 
+          omit.summary.stat = "N", notes = "N = 6,528")
+```
+
+## 
+
+# 3 Build Models
+
+filter the data to only include people who were in crashes for the linear regression.\
+Model 1
+
+```{r}
+#glm_reg1 <- glm(data = train_df,
+ #           formula = crash_flag ~. -crash_cost,
+  #          family = binomial(link = 'logit'))
+#summary(glm_reg1)
+```
+
+filter the data for linear regression
+
+```{r}
+#df_crash <- train_df |> filter(crash_flag == 1)
+#df_no_crash <- train_df |> filter(crash_flag == 0)
+```
+
+Run linear regression on filtered data
+
+```{r}
+#lm_reg1 <- lm(data = df_crash,
+ #             formula = crash_cost ~ . -crash_flag)
+#summary(lm_reg1)
+```
+
+```{r}
+#plot(df_crash$income,df_crash$crash_cost)
+
+#ggplot(data = df_crash,
+ #      mapping = aes(x = car_value, y = crash_cost))+
+  #geom_point()+
+  #geom_smooth(method = 'lm', se = F)
+```
+
+# 4 Select Models

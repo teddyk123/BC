@@ -1,0 +1,244 @@
+---
+title: "Fixed Effects Panel Data"
+author: "Teddy Kelly"
+format: 
+  html:
+    embed-resources: true
+editor: visual
+toc: TRUE
+---
+
+# 1. Load in the Panel Data
+
+For this assignment, I decided to use the `LaborSupply` dataset from the `plm` package in r. This is a **balanced** panel dataset that contains wage data on 532 different individuals (entities) during a 10 year period from 1979-1988 (time component), resulting in 5,320 total observations.
+
+```{r}
+rm(list=ls())
+library(plm)
+data(LaborSupply)
+```
+
+Below are the summary statistics of the data with the variable descriptions of each feature of the data.
+
+**Summary Statistics**
+
+```{r, message=FALSE, warning=FALSE}
+library(stargazer)
+labels = c(
+  "Log of annual hours worked",
+  "Log of hourly wage",
+  "Number of kids",
+  "Age in years",
+  "Has a disability",
+  "ID of individual",
+  "Year"
+)
+stargazer(LaborSupply, type='text', omit.summary.stat = "N", covariate.labels = labels, 
+          title = "Summary Statistics for Labor Wages", digits = 2)
+```
+
+**Variable Descriptions**
+
+-   `lnhr` - Numeric: Log of annual hours worked.
+
+-   `lnwg` - Numeric. Log of hourly wages.
+
+-   `kids` - Numeric. Number of children each observation has
+
+-   `age` - Numeric. Age of individuals
+
+-   `disab` - Factor. Indication whether someone has a disability or not.
+
+-   `id` - Factor. The id of each individual.
+
+-   `year` - Factor indicating the eyar from 1979 to 1988.
+
+Not that the only variables that change over time are `lnhr` , `lnwg`, and `age`. All of the other variables are time-invariant which means they stay constant over time. Not controlling for these variables may result in biased coefficient estimates.
+
+# 2. OLS Regression without Dummies
+
+Estimating equation of the OLS regression without using fixed effects:
+
+$$
+lnwg_i = \beta_0 + \beta_1lnhr_i + \beta_2age_i + u_i
+$$
+
+Below are the regression results using the estimating equation from above.
+
+```{r}
+# Normal regression without fixed effects
+reg1 <- lm(data = LaborSupply,
+           formula = lnwg ~ lnhr + age + kids)
+summary(reg1)
+```
+
+## 2. 1 Interpretations:
+
+-   **Direction (+)**
+
+    -   The coefficient estimates for both `lnhr` and `age` are positive which makes sense because it's expected that people who are older and work more hours will have higher wages.
+
+-   **Magnitude**
+
+    -   `lnhr` - For every 1% increase in the number of hours someone works, their hourly wage is expected to increase by about 0.19%, holding all else constant.
+
+    -   `age` - For every year older a person gets, their hourly wage is expected to increase by about 0.0077%, holding all else constant.
+
+    -   It's most likely that these coefficient estimates are biased because of the unobserved heterogeneity from the variables that vary from person to person but do not change over time. However, it's difficult to determine if these coefficients are overestimates or underestimates. We will find out after perform the fixed-effects regressions.
+
+-   **Statistical Significance**
+
+    -   Both estimates are statistically significant at the $\alpha = 0.001$ level, indicating strong certainty that these estimates are not the result of randomness.
+
+## 2.2 Omitted Variables
+
+There is a possible risk of bias from the omitted variables that differ across individuals in the dataset but do not vary across time.
+
+```{r}
+cor1 <- cor.test(LaborSupply$lnhr, LaborSupply$disab)
+cor2 <- cor.test(LaborSupply$lnwg, LaborSupply$disab)
+
+cor3 <- cor.test(LaborSupply$lnhr, LaborSupply$kids)
+cor4 <- cor.test(LaborSupply$lnwg, LaborSupply$kids)
+# Correlation between lnhr and disab
+cor1$estimate
+
+# correlation between lnwg and disab
+cor2$estimate
+
+# correlation between lnhr and kids
+cor3$estimate
+
+#correlation between lnwg and kids
+cor4$estimate
+```
+
+-   `kids` - The number of children that each person has is generally the same over time. Note that there are some occurrences where the observations did have children during the time frame, but this was generally not the case.
+
+    -   In theory, people tend to work fewer hours when they have children and also high fertility has been linked with lower wages which would suggest a positive bias in the coefficient estimate from removing this from the regression.
+
+    -   However, the correlation test from above shows that having kids is positively correlated with working hours which is surprising. If this is the case, then this would mean there is negative bias from removing `kids` from the regression.
+
+-   `disab` - Whether or not a person has a disability usually stays the same over time unless someone sustains a life-changing injury during the time period. This was really the case in the data.
+
+    -   The correlation tests from above display that `disab` is negatively correlated with both working hours and wages, Therefore, we would expect that omitting this variable would result in positive bias.
+
+    We will now use fixed-effects to control for these time-invariant variables and evaluate the effect on the coefficient estimates.
+
+# 3. Regression Using Fixed-Effects
+
+## 3. 1 OLS Regression with Dummy variables for ID
+
+**Estimating Equation:**
+
+$$
+lnwg_{it}=\beta_0+\beta_1lnhr_{it}+\beta_2age_{it}+\delta_1id1_{i}+ ...+\delta_{n-1}id(n-1)_i+u_{it}
+$$
+
+Now, I will run a regression with the dummy variables for each id to control for the time-invariant variables for each observation. These time-invariant variables include the number of children each person has, and whether or not someone has a disability.
+
+```{r}
+reg2 <- lm(data = LaborSupply,
+           formula = lnwg ~ lnhr + age + factor(id))
+```
+
+## 3.2 Demeaned Regression
+
+**Estimating Equation:**
+
+$$
+\tilde{lnhr}_{it}=\beta_1\tilde{lnwg}_{it}+\beta_2\tilde{age}_{it}+\tilde{u}_{it}
+$$
+
+Now let's compare these results to the demeaned regression.
+
+```{r}
+# Demeaned regression
+demeaned_labor <- with(data = LaborSupply,
+                       expr = data.frame(lnwg = lnwg - ave(x = lnwg, factor(id)),
+                                         lnhr = lnhr - ave(x = lnhr, factor(id)),
+                                         age = age - ave(x = age, factor(id))
+                                         )
+                       )
+
+demeaned_reg <- lm(data = demeaned_labor,
+                   formula = lnwg ~ lnhr + age - 1)
+```
+
+## 3. 3 Fixed-Effects Regression with the plm command
+
+**Estimating Equation:**
+
+$$
+lnwg_{it}=\beta_1lnhr_{it}+\beta_2age_{it}+disab_i+kids_i+u_{it}
+$$
+
+Fixed-effects regression:
+
+```{r}
+library(plm)
+reg_fe <- plm(data = LaborSupply,
+              formula = lnwg ~ lnhr + age,
+              index = c("id", "year"),
+              model = "within")
+```
+
+Now, let's observe the coefficient estimates of these three regression side by side.
+
+I will now display the three regressions side by side.
+
+```{r}
+reg_labels <- c(
+  "Log annual hours worked",
+  "Age",
+  "constant"
+)
+stargazer(reg2, demeaned_reg, reg_fe, type = "text", digits = 5, 
+          title = "Comparison of the Regression", omit = "id", 
+          notes = "Dropping the id dummy coefficients", 
+          column.labels = c("OLS with ID dummy", "Demeand Regression", "Fixed Effects"),
+          covariate.labels = reg_labels, 
+          dep.var.labels = "Log of hourly wage")
+```
+
+## 3.4 Interpretations
+
+-   **Sign (+)**
+
+    -   The signs of the coefficients are still **positive** which is good news since we expect that people will make more money as they get older and gain more experience and work more hours.
+
+-   **Magnitude**
+
+    -   `lnhr` - The coefficients for all three regressions are exactly the same with a value of 0.09645. This means that for every 1% increase in the amount of hours worker, a person's hourly wage will increase by about 0.096%, all else equal.
+
+    -   Note that this is less than the estimate for the non-fixed effects regression. Therefore, adding the fixed-effects element helps reduce the overestimates of the coefficients that was included in the original regression by not controlling for the time-invariant variables.
+
+    -   The positive bias in the orginial regression was likely coming from omitting `disab` since we determined it to have positive bias while `kids` appeared to have negative bias.
+
+    -   `age` - The coefficients for age are also exactly the same for the three fixed-effects regressions with a value of 0.00164. This means that for every 1 year older someone gets, their expected hourly wage will increase by about 0.002%, all else equal.
+
+    -   This value is also less than for the non-fixed effects regression, indicating that not controlling for the time-invariant variables resulted in overestimating the relationship between age and log hourly wage.
+
+-   **Significance**
+
+    -   Both estimates are significant under the $\alpha=0.05$ level across all three of the regressions.
+
+# Conclusion
+
+-   We ran an initial linear regression without controlling for time-invariant variables like `kids` and `disab` which resulted in overestimating the regression coefficients.
+
+-   We then controlled for these omitted variables by using three different fixed-effects regression methods:
+
+```         
+-   OLS with dummy variables for each id
+
+-   Demeaned Regression
+
+-   Using the plm command to get the fixed-effects estimator directly
+```
+
+-   All of the coefficient estimates for the three regressions were identical, standard errors were very similar, and F-statistics are also similar. The adjusted R-squared value was the highest for the OLS regression with the id dummy variables.
+
+-   This result of the coefficient estimates illustrates how there are multiple techniques that we can use to apply the fixed-effects methods to extract insights from panel datasets.
+
+-   The OLS regression with the dummy variables had an adjusted R-squared value of about 0.83 which is by far the highest value of the regressions.

@@ -1,0 +1,180 @@
+---
+title: "Gauss Markov Assumptions Discussion"
+author: "Teddy Kelly"
+format:
+  html:
+    embed-resources: true
+editor: visual
+toc: TRUE
+---
+
+# Part I
+
+1.  **State the Gauss-Markov Assumptions**
+    -   The model must be linear in parameters.
+
+    -   All of the rows and columns must be linearly independent from each other.
+
+    -   The expected value of the error term that is explained by the independent variables is zero (zero conditional mean assumption).
+
+    -   The model assumes homoscedasticity, meaning that there is constant variance among the error terms across all values of x.
+
+    -   The data that is generated are either constants or random variables.
+
+    -   The error terms are normally distributed around the regression line.
+2.  **Explain each assumption in a non-technical way**
+    -   The first assumption is that there must be a linear relationship between the dependent variable and independent variables. The dependent variable is the variable we are trying to predict and the independent variables are the variables used to predict the dependent variable. We need this assumption to hold because if the model is not linear, then we would not be able to find a direct estimate that defines the relationship between the independent variables to the dependent variable.
+
+    -   All of the variables and observations in a dataset must be independent of each other. If there are variables or observations that are identical to each other or one variable is directly used to calculate another variable used in the model, then we may run into problems when estimating the relationship between the independent variables and the dependent variable.
+
+    -   The third assumption has a few different parts. Two aspects of this assumption is that all of the independent variables come from outside of the model and that the expected value of the error term explained by the independent variables is zero. This is just an in depth way of saying that the independent variables are not affected by the dependent variable or any other variables in the model.
+
+    -   Every model has errors. The fourth assumption is that these errors remain constant for any value of an independent variable and do not increase/descrese as the independent variable changes. If this assumption is violated, then it suggests that we may have to alter our data in some way.
+
+    -   The data must be unrelated to the error term.
+
+    -   The last assumption is that the error terms will be normally distributed around the regression line. The regression line is our model and there are always going to be errors from our model. Our goal is that these errors are not skewed in any direction so that we can be more confident in the results from our model.
+3.  **Explain each assumption for a technical audience**
+    -   The model must be linear in parameters. In order for us to use ordinary least squares regression to model the relationship between the x variables and the y dependent variable, their relationship must be linear. And specifically, it must be linear in **parameters**. This means that we can still perform some transformations on the x independent variables and not change the linearity of the parameters. However, as soon as there is a transformation like a log, square, or multiplying multiple coefficients together, this now changes the interpretation of the model and causes OLS to break down.
+
+    -   The second assumption is full column rank. A matrix has a full column rank if all of its columns are linearly independent from each other. When this is the case, then the determinant of the matrix will be nonzero, meaning that it is invertible. This is essential for performing OLS because the inverse of X’X must exist to compute the beta coefficients which represent the effect that the independent variables have on the response variable. When a dataset does not have full column rank or the columns are linearly dependent, then its determinant will be zero meaning that it is not inevitable and there is no inverse that exists. Therefore, it will be impossible to calculate the beta coefficients and we cannot run OLS regression.
+
+    -   The third assumption is that the independent variables are exogenous, meaning that they come from outside the model. This is probably the most important assumption because it allows us to say that the expected value of the error term that is explained by the independent variables is zero. This means our model is unbiased because the independent variables are not affected by other parts of the model like the dependent variable or any other variables in the model. This assumption can be violated due to omitted variable bias which is when a variable that is both correlated with another independent variable and the dependent variable is removed from the model. This causes this omitted variable’s effect to be assumed by the coefficient of other independent variables still in the regression which then creates bias in the model.
+
+    -   Homoscedasticity is the 4th assumption which is crucial for the standard errors in our model. We assume that the error terms have constant variance for every value of x. If there is not constant variance and the variance actually appears to be increasing with x, then one solution is using weighted least squares regression. Another case where there is not homoscedasticity or aka heteroscedasticity, is when there is a clear pattern in the error terms or curvature. In this case, our line of best fit is not as good as it could be and may require adjusting our model. Having homoscedasticity leads to a smaller standard error which means there is less variability in our model allowing us to be more confident in our results. 
+
+    -   The fifth assumption is that the data can be any combination of fixed or random variables. However, this data must be generated in a way that is completely unrelated to the error term.
+
+    -   The error terms are normally distributed around the regression line. This is important because it also plays a role in measuring the performance of our model.
+
+# Part II
+
+I will use the **diamonds** data set that comes from the base R package. This is a cross-sectional data set with 53,940 observations of different diamonds and 10 different variables.
+
+## Loading the data set
+
+```{r, message=FALSE}
+rm(list=ls())
+library("tidyverse")
+data("diamonds")
+
+```
+
+I decided to run the simple linear regression on with **price** as the dependent variable and **carat** as the independent variable. in theory, the carat or the weight of the diamond is what most determines its price, and specifically, the most expensive diamonds are the one with the most carats. Below is the full estimating equation of this simple linear regression and its regression results: $$price_i=\beta_0+\beta_1carat+u_i$$.
+
+Variable Units:
+
+-   **price**: The price of the diamond measured in US dollars
+
+-   **carat**: The weight of the diamond measured in grams
+
+```{r}
+my_reg <- lm(data = diamonds, formula = price ~ carat)
+summary(my_reg)
+```
+
+**Interpretation:**
+
+Looking at the coefficient estimates, we can rewrite our estimating equation as follows: $$price_i = -2256.36+7756.43carat_i+u_i$$
+
+Expected Sign (Economic Theory)
+
+-   Positive
+-   The coefficient associated with `carat` is positive which is expected since the carat indicates the weight of the diamond, and diamonds that weigh more are generally more expensive
+
+Economic Magnitude
+
+-   The coefficient $\beta_1=7756.43$ means that for every 1 gram increase in the carat of a diamond, the price of a diamond increases by about \$7,756 on average. This is a very strong economic effect.
+
+-   The coefficient $\beta_0 = -2256.36$ means that if a diamond has zero carats, then the price will be -\$2,256. This doesn't make sense in an economic context because what does it mean for a diamond to cost negative dollars? Also, it is impossible for a diamond to have zero carats (weigh 0 grams). However, the important takeaway is that the price of diamonds with few carats typically cost less money.
+
+Statistical Significance
+
+-   The p-values for both the intercept and `carat` coefficients are extremely close to zero, below a significance level of even $\alpha=0.0001$. This suggests extremely statistically significant results in the coefficient estimate values.
+
+-   Also, the multiple and adjusted R-squared value is $R^2=0.85$ which is very high. This means that about 85% of the variation in diamond prices can be explained by the carat of the diamond.
+
+-   The F-statistic is extremely high indicating that this model as a whole is statistically significant. This tells us that there is a relationship between the carat of a diamond and its price.
+
+# Part III
+
+Below are the 4 linear regression plots from the model I used in Part II. Let's look at each one and interpret what they all mean.
+
+```{r}
+par(mfrow = c(2, 2))
+plot(my_reg)
+```
+
+**Residual vs Fitted Plot**
+
+-   Residual vs fitted plots display how the residuals behave across the fitted values from the regression. The red line displays the regression line from our model.
+
+-   Ideally, the residuals should be randomly scattered around the regression line in red and the regression line should be approximately linear around zero.
+
+-   However, this is not the case for the regression I ran. The regression line is not perfectly linear and is far away from zero as the fitted values increase, suggesting potential non-linearity.
+
+-   Also, the residuals appear to have a negative linear relationship with the fitted values instead of being randomly scattered. This is not good since we do not want the residuals to have any sort of pattern.
+
+-   The variance of the residuals appears to be increasing as the fitted values increase, indicating some level of heteroscedasticty.
+
+**Normal Q-Q Plot**
+
+-   A Q-Q plot describes whether residuals are normally distributed or not by comparing the distribution of the residuals to an actual normal distribution
+
+-   The dotted line represents an ideal normal distribution, and if the residuals are also normally distributed, the they should approximately fall onto that line
+
+-   However, although the residuals are on the dotted line in the center of the plot, the residuals have "fat tails" meaning that they curve up or down from the ideal normal distribution on both ends.
+
+-   This indicates extreme values and that the residuals are not normally distributed which violates the normality assumption of the residuals.
+
+**Scale-Location Plot**
+
+-   The scale-location plot shows checks specifically for homoscedasticity. We already found that there is some homoscedasticty from the residuals vs fitted plot and this plot confirms this.
+
+-   The red line is slanted upwards which is a clear indication of heteroscedasticity. What we want is for the red line to be roughly horizontal for the homoscedasticity condition to be met.
+
+-   Also, it appears that the spread of the residuals is increasing as the fitted values increase which is another indication of heteroscedasticity.
+
+**Residuals vs Leverage Plot**
+
+-   This plots displays the data points that have a big effect on our model.
+
+-   As we can see, there are some pretty large negative residuals that appear to be pulling the regression line down towards those values.
+
+-   Specifically, observations 25,999, 27,631, and 27416 are labeled on the plot meaning that they are significantly effecting the model. Imputing, transforming, or even removing these values will likely help increase the validity of the regression.
+
+## Violations of Gauss-Markov Assumptions
+
+The plots above indicate clearly that three of the six Gauss-Markov assumptions have been violated.
+
+1.  Assumption 1: Linearity
+    -   The residual vs fitted plot displays that the linearity assumption is violated since the regression line in red is not horizontal around zero and the residuals appear to be following a pattern.
+2.  Assumption 4: Homoscedasticity
+    -   The residual vs fitted and the scale-location plots both indicate heteroscedasticity, violation the assumption of constant variance among the residuals across the fitted values.
+3.  Assumption 6: Normally Distributed Residuals
+    -   The normal Q-Q plot clearly implies a violation of the residuals being normally distributed since the tails of the residuals shift very far away from the perfect normal distribution that is represented by the dotted line.
+
+## Variable Transformation
+
+I will now address some of these violations by performing some variable transformation to observe if these result in improvements in the model I created above.
+
+```{r}
+plot(diamonds$carat, diamonds$price)
+```
+
+The plot above displays that there is a nonlinear relationship which could be a reason as to why some of the assumptions have been violated. To address, this I have performed log transformations on both `price` and `carat` to see if this has any effect on the linear regression plots.
+
+```{r}
+new_reg <- lm(formula = log(price) ~ log(carat), data = diamonds)
+par(mfrow = c(2, 2))
+plot(new_reg)
+```
+
+We can see from the linear regression plots above that the residuals are randomly scattered, the regression line is linear, the residuals are much more normally distributed, and there is less evidence of heteroscedasticity. Also, in the plot below, the relationship between log of price and log of carats is much more linear than before, indicating that applying a log transformation to both variables greatly improved the prediction of diamond prices using carats.
+
+```{r}
+plot(log(diamonds$carat), log(diamonds$price), 
+     main = "Log of diamond prices as a function of log of carats",
+     xlab = "log of carat",
+     ylab = "log of price")
+```
